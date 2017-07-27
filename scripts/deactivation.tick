@@ -1,0 +1,55 @@
+// Sends alerts whenever a Kloudless account is deactivated
+var db = 'telegraf'
+var rp = 'two_weeks'
+var measurement = 'error_celery_credentials_update_credential_deactivation'
+
+var groupBy = []
+var whereFilter = lambda: TRUE
+var name = 'Deactivations'
+var idVar = name + ':{{.Group}}'
+var message = ''
+var idTag = 'alertID'
+var levelTag = 'level'
+var messageField = '[{{.Level}}]{{ index .Fields "service" }} account deactivated. (credential_id={{ index .Fields "credential_id" }}, application_id={{ index .Fields "application_id" }}, error_id={{ index .Fields "error_id" }})'
+var durationField = 'duration'
+
+var outputDB = 'chronograf'
+var outputRP = 'autogen'
+var outputMeasurement = 'alerts_credential_deactivations'
+
+var triggerType = 'threshold'
+var crit = 0.0
+
+var data = stream
+    |from()
+        .database(db)
+        .retentionPolicy(rp)
+        .measurement(measurement)
+        .groupBy(groupBy)
+        .where(whereFilter)
+    |eval(lambda:"credential_id", lambda:"application_id", lambda:"error_id", lambda:"service")
+        .as('credential_id', 'application_id', 'error_id', 'service_id')
+
+var trigger = data
+    |alert()
+        .crit(lambda: TRUE)
+        .stateChangesOnly()
+        .message(message)
+        .id(idVar)
+        .idTag(idTag)
+        .levelTag(levelTag)
+        .messageField(messageField)
+        .durationField(durationField)
+        .log('/tmp/alerts.log')
+
+trigger
+    |influxDBOut()
+        .create()
+        .database(outputDB)
+        .retentionPolicy(outputRP)
+        .measurement(outputMeasurement)
+        .tag('alertName', name)
+        .tag('triggerType', triggerType)
+
+trigger
+    |httpOut('output')
